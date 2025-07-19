@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GBV Guide Reader</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 1rem;
+      transition: background-color 0.3s, color 0.3s;
+    }
+
+    .book-content {
+      margin-top: 20px;
+      text-align: left;
+    }
+
+    .navigation {
+      margin-top: 30px;
+      text-align: center;
+    }
+
+    .navigation button {
+      margin: 0 10px;
+      padding: 10px 20px;
+    }
+
+    /* Reader Settings Panel */
+    .settings-panel {
+      display: none;
+      position: fixed;
+      top: 60px;
+      right: 16px;
+      background: #fff;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 16px;
+      z-index: 100;
+      width: 240px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .settings-panel.show {
+      display: block;
+    }
+
+    .settings-panel label {
+      display: block;
+      margin-top: 12px;
+    }
+
+    body.dark {
+      background-color: #121212;
+      color: #f0f0f0;
+    }
+
+    body.dark .settings-panel {
+      background-color: #1e1e1e;
+      color: #f0f0f0;
+      border-color: #444;
+    }
+
+    body.dark button {
+      background-color: #333;
+      color: #f0f0f0;
+      border: 1px solid #555;
+    }
+
+    body.dark input,
+    body.dark select {
+      background-color: #333;
+      color: #f0f0f0;
+      border: 1px solid #777;
+    }
+
+  </style>
+</head>
+
+<body>
+  <!-- Top-right Reader Settings only -->
+<div style="position: fixed; top: 16px; right: 16px; z-index: 10;">
+  <button id="settingsBtn">⚙️ Reader Settings</button>
+</div>
+
+  <!-- Settings Panel -->
+  <div class="settings-panel" id="settingsPanel">
+    <label for="fontSize">Font Size: <span id="fontLabel">18px</span></label>
+    <input type="range" id="fontSize" min="14" max="40" value="18" />
+
+    <label>
+      <input type="checkbox" id="darkModeToggle" />
+      Dark Mode
+    </label>
+  </div>
+
+  <!-- Book Content -->
+  <div class="container">
+    <h3 style="text-align:center; color: #555; margin-bottom: 20px;">GBV Guide Reader</h3>
+    <div id="book-content" class="book-content">Loading book...</div>
+
+    <!-- Navigation now includes Start Over -->
+<div class="navigation">
+  <button id="prev">← Previous</button>
+  <button id="next">Next →</button>
+  <button id="startOverBtn">🔁 Start Over</button>
+</div>
+
+
+  <script>
+    let token = 'guide1';  // Hardcoded shared book ID
+    let currentPage = 0;
+    let bookPages = [];
+
+    async function fetchPages() {
+      try {
+        const res = await fetch(
+          `https://aereuirghskmkktqbjur.supabase.co/rest/v1/book_pages?select=*&book_id=eq.${encodeURIComponent(token)}&order=order.asc`,
+          {
+            headers: {
+              apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcmV1aXJnaHNrbWtrdHFianVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjkwMTcsImV4cCI6MjA2NDU0NTAxN30.ky0IfLguqO-dJ8Incjztw0RIKin4Mq2VJeGDbKPsokA',
+              Authorization: `Bearer ${localStorage.getItem("sb-access-token") || ''}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+
+        const data = await res.json();
+
+        if (!Array.isArray(data) || data.length === 0) {
+          document.getElementById('book-content').innerText = "No pages found for this token.";
+          return;
+        }
+
+        bookPages = data;
+        renderPage(currentPage);
+      } catch (error) {
+        console.error("Error loading book:", error);
+        document.getElementById('book-content').innerText = "Failed to load book.";
+      }
+    }
+
+    function renderPage(index) {
+      if (bookPages[index]) {
+        const page = bookPages[index];
+        const titleHTML = page.title.toLowerCase().includes("cover") ? "" : `<h2>${page.title}</h2>`;
+        document.getElementById('book-content').innerHTML = `${titleHTML}<div>${page.content}</div>`;
+      }
+    }
+
+    function goToNextPage() {
+      if (currentPage < bookPages.length - 1) {
+        currentPage++;
+        renderPage(currentPage);
+      }
+    }
+
+    function goToPrevPage() {
+      if (currentPage > 0) {
+        currentPage--;
+        renderPage(currentPage);
+      }
+    }
+
+    function startOver() {
+      currentPage = 0;
+      renderPage(currentPage);
+    }
+
+    function toggleSettingsPanel() {
+      document.getElementById("settingsPanel").classList.toggle("show");
+    }
+
+    function applyFontSize(value) {
+      document.body.style.fontSize = value + 'px';
+      document.getElementById('fontLabel').textContent = value + 'px';
+      localStorage.setItem('reader-font-size', value);
+    }
+
+    function toggleDarkMode(enabled) {
+      document.body.classList.toggle('dark', enabled);
+      localStorage.setItem('reader-dark-mode', enabled ? '1' : '0');
+    }
+
+    function loadSettings() {
+      const savedSize = localStorage.getItem('reader-font-size') || '18';
+      const darkMode = localStorage.getItem('reader-dark-mode') === '1';
+
+      applyFontSize(savedSize);
+      document.getElementById('fontSize').value = savedSize;
+      document.getElementById('darkModeToggle').checked = darkMode;
+      toggleDarkMode(darkMode);
+    }
+
+    window.onload = () => {
+      document.getElementById('prev').addEventListener('click', goToPrevPage);
+      document.getElementById('next').addEventListener('click', goToNextPage);
+      document.getElementById('startOverBtn').addEventListener('click', startOver);
+      document.getElementById('settingsBtn').addEventListener('click', toggleSettingsPanel);
+      document.getElementById('fontSize').addEventListener('input', e => applyFontSize(e.target.value));
+      document.getElementById('darkModeToggle').addEventListener('change', e => toggleDarkMode(e.target.checked));
+      
+      loadSettings();
+      fetchPages();
+    };
+  </script>
+</body>
+</html>

@@ -1,0 +1,107 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GBV Guide Reader</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Enter Your Access Key</h1>
+
+    <label for="access-type">Choose Access Type:</label>
+    <select id="access-type">
+      <option value="cash">Cash</option>
+      <option value="gumroad">Gumroad</option>
+    </select>
+    
+    <input type="text" id="accessKey" placeholder="Gumroad or Cash Code" />
+    <button id="startReading">Begin Reading</button>
+  </div>
+
+  <!-- Supabase access logic -->
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js";
+
+    const supabase = createClient(
+      "https://aereuirghskmkktqbjur.supabase.co",
+      "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcmV1aXJnaHNrbWtrdHFianVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjkwMTcsImV4cCI6MjA2NDU0NTAxN30.ky0IfLguqO-dJ8Incjztw0RIKin4Mq2VJeGDbKPsokA"
+    );
+
+    document.getElementById("startReading").addEventListener("click", async () => {
+      const accessKey = document.getElementById("accessKey").value.trim();
+      const accessType = document.getElementById("access-type").value;
+
+      if (!accessKey) {
+        alert("Please enter an access key.");
+        return;
+      }
+
+      if (accessType === "cash") {
+        const { data, error } = await supabase
+          .from("access_tokens")
+          .select("*")
+          .eq("token", accessKey)
+          .eq("source", "cash")
+          .eq("status", "active");
+
+        if (data && data.length === 1) {
+          const email = data[0].email_or_phone;
+
+          if (email) {
+            await supabase.auth.signInWithOtp({
+              email,
+              options: { shouldCreateUser: true }
+            });
+          }
+
+          // ✅ Save token to localStorage instead of sessionStorage
+          localStorage.setItem("reader-token", accessKey);
+
+          window.location.href = `reader.html?token=${accessKey}`;
+        } else {
+          alert("Invalid or inactive cash access key.");
+        }
+      }
+
+      if (accessType === "gumroad") {
+        try {
+          const response = await fetch("https://api.gumroad.com/v2/licenses/verify", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              product_permalink: "yfrat",
+              license_key: accessKey
+            })
+          });
+
+          const result = await response.json();
+
+          if (result.success) {
+            // ✅ Save Gumroad reader token too
+            localStorage.setItem("reader-token", "guide1");
+            window.location.href = "reader.html?token=guide1";
+          } else {
+            alert("Invalid Gumroad license.");
+          }
+        } catch (err) {
+          console.error(err);
+          alert("Error checking Gumroad license.");
+        }
+      }
+    });
+  </script>
+
+  <!-- Optional helper -->
+  <script>
+    function redirectToReader() {
+      const token = document.getElementById("tokenInput")?.value.trim();
+      if (token) {
+        window.location.href = `reader.html?token=${token}`;
+      }
+    }
+  </script>
+</body>
+</html>
