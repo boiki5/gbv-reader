@@ -15,6 +15,15 @@
     .book-content {
       margin-top: 20px;
       text-align: left;
+      width: 100%;
+      max-width: 600px;
+      height: 600px;
+      overflow: hidden;
+      padding: 15px;
+      box-sizing: border-box;
+      font-size: 18px;
+      line-height: 1.5;
+      border: 1px solid #ccc;
     }
 
     .navigation {
@@ -27,7 +36,6 @@
       padding: 10px 20px;
     }
 
-    /* Reader Settings Panel */
     .settings-panel {
       display: none;
       position: fixed;
@@ -74,47 +82,60 @@
       color: #f0f0f0;
       border: 1px solid #777;
     }
-
   </style>
 </head>
 
 <body>
-  <!-- Top-right Reader Settings only -->
-<div style="position: fixed; top: 16px; right: 16px; z-index: 10;">
-  <button id="settingsBtn">⚙️ Reader Settings</button>
-</div>
+  <div style="position: fixed; top: 16px; right: 16px; z-index: 10;">
+    <button id="settingsBtn">⚙️ Reader Settings</button>
+  </div>
 
-  <!-- Settings Panel -->
   <div class="settings-panel" id="settingsPanel">
     <label for="fontSize">Font Size: <span id="fontLabel">18px</span></label>
     <input type="range" id="fontSize" min="14" max="40" value="18" />
-
     <label>
       <input type="checkbox" id="darkModeToggle" />
       Dark Mode
     </label>
   </div>
 
-  <!-- Book Content -->
   <div class="container">
     <h3 style="text-align:center; color: #555; margin-bottom: 20px;">GBV Guide Reader</h3>
     <div id="book-content" class="book-content">Loading book...</div>
 
-    <!-- Navigation now includes Start Over -->
-<div class="navigation">
-  <button id="prev">← Previous</button>
-  <button id="next">Next →</button>
-  <button id="startOverBtn">🔁 Start Over</button>
-</div>
-
+    <div class="navigation">
+      <button id="prev">← Previous</button>
+      <span id="page-info">Page 1 of 1</span>
+      <span id="location-info">Location 0 of 0</span>
+      <button id="next">Next →</button>
+      <button id="startOverBtn">🔁 Start Over</button>
+    </div>
+  </div>
 
   <script>
-    let token = 'guide1';  // Hardcoded shared book ID
+    let token = 'guide1';
     let currentPage = 0;
     let bookPages = [];
+    let paginatedContent = [];
+    const charsPerPage = 1500;
 
     async function fetchPages() {
       try {
+        const progressRes = await fetch(
+          `https://aereuirghskmkktqbjur.supabase.co/rest/v1/user_progress?user_id=eq.${localStorage.getItem("sb-access-token")}&book_id=eq.${encodeURIComponent(token)}`,
+          {
+            headers: {
+              apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcmV1aXJnaHNrbWtrdHFianVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjkwMTcsImV4cCI6MjA2NDU0NTAxN30.ky0IfLguqO-dJ8Incjztw0RIKin4Mq2VJeGDbKPsokA',
+              Authorization: `Bearer ${localStorage.getItem("sb-access-token") || ''}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+        const progressData = await progressRes.json();
+        if (progressData && progressData.length > 0) {
+          currentPage = progressData[0].current_page || 0;
+        }
+
         const res = await fetch(
           `https://aereuirghskmkktqbjur.supabase.co/rest/v1/book_pages?select=*&book_id=eq.${encodeURIComponent(token)}&order=order.asc`,
           {
@@ -133,7 +154,9 @@
           return;
         }
 
+        let fullContent = data.map(page => (page.title.toLowerCase().includes("cover") ? "" : `<h2>${page.title}</h2>`) + page.content).join('');
         bookPages = data;
+        paginateContent(fullContent);
         renderPage(currentPage);
       } catch (error) {
         console.error("Error loading book:", error);
@@ -141,18 +164,68 @@
       }
     }
 
+    function paginateContent(content) {
+      paginatedContent = [];
+      const textOnly = content.replace(/<[^>]+>/g, '');
+      for (let i = 0; i < textOnly.length; i += charsPerPage) {
+        let startChar = i;
+        let endChar = Math.min(i + charsPerPage, textOnly.length);
+        let startIndex = 0;
+        let charCount = 0;
+        for (let j = 0; j < content.length && charCount < endChar; j++) {
+          if (!/<[^>]+>/.test(content[j])) charCount++;
+          if (charCount === startChar) startIndex = j;
+          if (charCount === endChar) {
+            paginatedContent.push(content.slice(startIndex, j));
+            break;
+          }
+        }
+        if (charCount < endChar) {
+          paginatedContent.push(content.slice(startIndex));
+        }
+      }
+      document.getElementById('page-info').innerText = `Page ${currentPage + 1} of ${paginatedContent.length}`;
+    }
+
     function renderPage(index) {
-      if (bookPages[index]) {
-        const page = bookPages[index];
-        const titleHTML = page.title.toLowerCase().includes("cover") ? "" : `<h2>${page.title}</h2>`;
-        document.getElementById('book-content').innerHTML = `${titleHTML}<div>${page.content}</div>`;
+      if (paginatedContent[index]) {
+        document.getElementById('book-content').innerHTML = paginatedContent[index];
+        document.getElementById('page-info').innerText = `Page ${index + 1} of ${paginatedContent.length}`;
+        const charsSoFar = index * charsPerPage;
+        const totalChars = paginatedContent.join('').replace(/<[^>]+>/g, '').length;
+        const location = Math.round(charsSoFar / 200);
+        document.getElementById('location-info').innerText = `Location ${location} of ${Math.round(totalChars / 200)}`;
+      }
+    }
+
+    async function saveProgress() {
+      try {
+        await fetch(
+          `https://aereuirghskmkktqbjur.supabase.co/rest/v1/user_progress`,
+          {
+            method: 'UPSERT',
+            headers: {
+              apikey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFlcmV1aXJnaHNrbWtrdHFianVyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg5NjkwMTcsImV4cCI6MjA2NDU0NTAxN30.ky0IfLguqO-dJ8Incjztw0RIKin4Mq2VJeGDbKPsokA',
+              Authorization: `Bearer ${localStorage.getItem("sb-access-token") || ''}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: localStorage.getItem("sb-access-token"),
+              book_id: token,
+              current_page: currentPage
+            })
+          }
+        );
+      } catch (error) {
+        console.error("Error saving progress:", error);
       }
     }
 
     function goToNextPage() {
-      if (currentPage < bookPages.length - 1) {
+      if (currentPage < paginatedContent.length - 1) {
         currentPage++;
         renderPage(currentPage);
+        saveProgress();
       }
     }
 
@@ -160,12 +233,14 @@
       if (currentPage > 0) {
         currentPage--;
         renderPage(currentPage);
+        saveProgress();
       }
     }
 
     function startOver() {
       currentPage = 0;
       renderPage(currentPage);
+      saveProgress();
     }
 
     function toggleSettingsPanel() {
@@ -174,8 +249,12 @@
 
     function applyFontSize(value) {
       document.body.style.fontSize = value + 'px';
+      document.getElementById('book-content').style.fontSize = value + 'px';
       document.getElementById('fontLabel').textContent = value + 'px';
       localStorage.setItem('reader-font-size', value);
+      const fullContent = bookPages.map(page => (page.title.toLowerCase().includes("cover") ? "" : `<h2>${page.title}</h2>`) + page.content).join('');
+      paginateContent(fullContent);
+      renderPage(currentPage);
     }
 
     function toggleDarkMode(enabled) {
@@ -207,3 +286,4 @@
   </script>
 </body>
 </html>
+
